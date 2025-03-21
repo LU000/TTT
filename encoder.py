@@ -12,10 +12,10 @@ class Encoder(nn.Module):
     def __init__(self,vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout=0.1,seq_max_len=5000):
         super().__init__()
         self.emb=EmbeddingWithPosition(vocab_size,emb_size,dropout,seq_max_len)
-
+  
         self.encoder_blocks=nn.ModuleList()
-        for _ in range(nblocks):
-            self.encoder_blocks.append(EncoderBlock(emb_size,q_k_size,v_size,f_size,head))
+        for i in range(nblocks):
+            self.encoder_blocks.append(EncoderBlock(emb_size,q_k_size,v_size,f_size,head))#, current_page_id=None,layer_idx=i))
 
     def forward(self,x): # x:(batch_size,seq_len)
         pad_mask=(x==PAD_IDX).unsqueeze(1) # pad_mask:(batch_size,1,seq_len)
@@ -25,6 +25,7 @@ class Encoder(nn.Module):
 
         x=self.emb(x)
         for block in self.encoder_blocks:
+
             x=block(x,pad_mask) # x:(batch_size,seq_len,emb_size)
         return x
     

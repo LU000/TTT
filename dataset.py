@@ -35,13 +35,16 @@ MAX_OUTPUT_LENGTH = 5000  # 输出句子的最大长度
 def de_preprocess(de_sentence):
     tokens = de_tokenizer(de_sentence)
     tokens = [BOS_SYM] + tokens + [EOS_SYM]
+    print(f"{len(tokens)}")
     tokens = tokens[:MAX_INPUT_LENGTH]  # 截断或填充到最大长度
+    print(f"{len(tokens)}")
     ids = de_vocab(tokens)
     
     # 如果长度不足，进行padding
    # if len(ids) < MAX_INPUT_LENGTH:
+    #    print("填充")
     #    ids.extend([PAD_IDX] * (MAX_INPUT_LENGTH - len(ids)))
-      
+        
     return tokens, ids
 
 def en_preprocess(en_sentence):
@@ -52,7 +55,8 @@ def en_preprocess(en_sentence):
     
     # 如果长度不足，进行padding
     #if len(ids) < MAX_OUTPUT_LENGTH:
-    #   ids.extend([PAD_IDX] * (MAX_OUTPUT_LENGTH - len(ids)))
+    #    print("填充")
+    #    ids.extend([PAD_IDX] * (MAX_OUTPUT_LENGTH - len(ids)))
         
     return tokens, ids
 

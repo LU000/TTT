@@ -8,9 +8,10 @@ from emb import EmbeddingWithPosition
 from dataset import de_preprocess,train_dataset,de_vocab
 
 class EncoderBlock(nn.Module):
-    def __init__(self,emb_size,q_k_size,v_size,f_size,head):
+    def __init__(self,emb_size,q_k_size,v_size,f_size,head):#,current_page_id,layer_idx):
         super().__init__()
-
+        #self.layer_idx = layer_idx
+        #self.current_page_id=current_page_id
         self.multihead_attn=MultiHeadAttention(emb_size,q_k_size,v_size,head)   # 多头注意力
         self.z_linear=nn.Linear(head*v_size,emb_size) # 调整多头输出尺寸为emb_size
         self.addnorm1=nn.LayerNorm(emb_size) # 按last dim做norm
@@ -22,9 +23,9 @@ class EncoderBlock(nn.Module):
             nn.Linear(f_size,emb_size)
         )
         self.addnorm2=nn.LayerNorm(emb_size) # 按last dim做norm
-
+ 
     def forward(self,x,attn_mask): # x: (batch_size,seq_len,emb_size)
-        z=self.multihead_attn(x,x,attn_mask)  # z: (batch_size,seq_len,head*v_size)
+        z=self.multihead_attn(x,x,attn_mask)#,self.current_page_id,self.layer_idx)  # z: (batch_size,seq_len,head*v_size)
         z=self.z_linear(z) # z: (batch_size,seq_len,emb_size)
         output1=self.addnorm1(z+x) # z: (batch_size,seq_len,emb_size)
         

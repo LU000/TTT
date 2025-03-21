@@ -51,9 +51,6 @@ def handle_client_connection(conn, addr):
                     kv_store.clear()
                     kv_store.update(kv_data)
                 print(f"[DEBUG] Current KV Store: {kv_store}")  # 添加这一行
-                
-                conn.sendall(b"ACK_KV_RECEIVED")
-
             except pickle.UnpicklingError as e:
                 print(f"[X] Error unpickling data from {addr}: {e}. Storing raw data.")
                 with store_lock:

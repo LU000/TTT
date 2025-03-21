@@ -12,25 +12,26 @@ from config import DEVICE
 class Transformer(nn.Module):
     def __init__(self,enc_vocab_size,dec_vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout=0.1,seq_max_len=5000):
         super().__init__()
-        self.head=head
-        self.head_dim=q_k_size
-        self.encoder=Encoder(enc_vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout,seq_max_len)
+        global k
+       # self.encoder=Encoder(enc_vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout,seq_max_len)
         self.decoder=Decoder(dec_vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout,seq_max_len)
 
-    def forward(self,encoder_x,decoder_x):
-        encoder_z=self.encode(encoder_x)
-        return self.decode(decoder_x,encoder_z,encoder_x)
+    def forward(self,decoder_x,encoder_x,prefill=False):#,page_id):
+        
+        decoder_z = self.decode(decoder_x,encoder_x,prefill)
+        return decoder_z#,page_id)
 
-    def encode(self,encoder_x):
-        encoder_z=self.encoder(encoder_x)
-        return encoder_z
+#    def encode(self,encoder_x):
+#        encoder_z=self.encoder(encoder_x)
+#        return encoder_z
 
-    def decode(self,decoder_x,encoder_z,encoder_x):
-        decoder_z=self.decoder(decoder_x,encoder_z,encoder_x)
+    def decode(self,decoder_x,encoder_x, prefill):#,page_id):
+        decoder_z = self.decoder(decoder_x,encoder_x,prefill)
+#        decoder_z=self.decoder(decoder_x,encoder_z,encoder_x)#,page_id)
         return decoder_z
     
 if __name__=='__main__':
-    transformer=Transformer(enc_vocab_size=len(en_vocab),dec_vocab_size=len(de_vocab),emb_size=128,q_k_size=256,v_size=512,f_size=512,head=8,nblocks=3,dropout=0.1,seq_max_len=5000).to(DEVICE)
+    transformer=Transformer(enc_vocab_size=len(en_vocab),dec_vocab_size=len(de_vocab),emb_size=512,q_k_size=256,v_size=512,f_size=2048,head=8,nblocks=3,dropout=0.1,seq_max_len=5000).to(DEVICE)
     
     # 取2个de句子转词ID序列，输入给encoder
     de_tokens1,de_ids1=de_preprocess(train_dataset[0][0]) 

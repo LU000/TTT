@@ -1,9 +1,6 @@
 '''
 训练de翻译en模型
 '''
-import torch
-torch.cuda.empty_cache()
-
 from torch import nn 
 import torch
 from dataset import en_preprocess,de_preprocess,train_dataset,en_vocab,de_vocab,PAD_IDX
@@ -66,7 +63,7 @@ if __name__=='__main__':
 
     # 开始练
     transformer.train()
-    EPOCHS=2
+    EPOCHS=1
     for epoch in range(EPOCHS):
         batch_i=0
         loss_sum=0
@@ -74,11 +71,13 @@ if __name__=='__main__':
             real_dec_z=pad_dec_x[:,1:].to(DEVICE) # decoder正确输出
             pad_enc_x=pad_enc_x.to(DEVICE) 
             pad_dec_x=pad_dec_x[:,:-1].to(DEVICE) # decoder实际输入 
-            dec_z=transformer(pad_enc_x,pad_dec_x) # decoder实际输出
+            dec_z=transformer(pad_dec_x) # decoder实际输出
 
             batch_i+=1
             loss = loss_fn(dec_z.reshape(-1, dec_z.size()[-1]), real_dec_z.reshape(-1))  # 把整个batch中的所有词拉平
-            #loss=loss_fn(dec_z.view(-1,dec_z.size()[-1]),real_dec_z.view(-1)) # 把整个batch中的所有词拉平
+#            loss=loss_fn(dec_z.view(-1,dec_z.size()[-1]),real_dec_z.view(-1)) # 把整个batch中的所有词拉平
+             
+
             loss_sum+=loss.item()
             print('epoch:{} batch:{} loss:{}'.format(epoch,batch_i,loss.item()))
             

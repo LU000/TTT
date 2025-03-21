@@ -10,14 +10,9 @@ from encoder import Encoder
 from config import DEVICE
 
 class DecoderBlock(nn.Module):
-    def __init__(self,emb_size,q_k_size,v_size,f_size,head):#,layer_idx):
+    def __init__(self,emb_size,q_k_size,v_size,f_size,head):
         super().__init__()
-        #self.layer_idx = layer_idx
-        # 自注意力机制
-        self.self_attn = MultiHeadAttention(emb_size, q_k_size, v_size, head)
-        self.attn_norm = nn.LayerNorm(emb_size)
 
-        '''
         # 第1个多头注意力 --> 自注意力
         self.first_multihead_attn=MultiHeadAttention(emb_size,q_k_size,v_size,head) 
         self.z_linear1=nn.Linear(head*v_size,emb_size) 
@@ -27,8 +22,7 @@ class DecoderBlock(nn.Module):
         self.second_multihead_attn=MultiHeadAttention(emb_size,q_k_size,v_size,head) 
         self.z_linear2=nn.Linear(head*v_size,emb_size) 
         self.addnorm2=nn.LayerNorm(emb_size)
-        '''
-        
+
         # feed-forward结构
         self.feedforward=nn.Sequential(
             nn.Linear(emb_size,f_size),
@@ -37,21 +31,50 @@ class DecoderBlock(nn.Module):
         )
         self.addnorm3=nn.LayerNorm(emb_size)
 
+    # 打开kvcache推理优化
     def open_kvcache(self):
-        self.self_attn.set_kvcache(kv_cache_type='selfattn')
+        self.first_multihead_attn.set_kvcache(kv_cache_type='selfattn')
+        self.second_multihead_attn.set_kvcache(kv_cache_type='crossattn')
         
+    # 关闭kvcache推理优化
     def close_kvcache(self):
-        self.self_attn.set_kvcache(kv_cache_type='')
+        self.first_multihead_attn.set_kvcache(kv_cache_type='')
+        self.second_multihead_attn.set_kvcache(kv_cache_type='')
         
-    def forward(self, x, attn_mask):
-        # 自注意力
-        attn_output = self.self_attn(x, x, attn_mask)
-        #print(f"{attn_output.shape},{x.shape}")
-        attn_output = self.attn_norm(attn_output + x)
+    def forward(self,x,encoder_z,first_attn_mask,second_attn_mask): # x: (batch_size,seq_len,emb_size)
+        # 第1个多头
+        z=self.first_multihead_attn(x,x,first_attn_mask)  # z: (batch_size,seq_len,head*v_size) , first_attn_mask用于遮盖decoder序列的pad部分,以及避免decoder Q到每个词后面的词
+        z=self.z_linear1(z) # z: (batch_size,seq_len,emb_size)
+       # print(f"x shape: {x.shape}, z shape: {z.shape}")
+      
+        #if x.shape[1] != z.shape[1]:  # 对 seq_len 维度进行对齐
+        #  min_len = min(x.shape[1], z.shape[1])
+        #  x = x[:, :min_len, :]
+        #  z = z[:, :min_len, :]
+        output1=self.addnorm1(z+x) # x: (batch_size,seq_len,emb_size)
         
-        # 前馈网络
-        ffn_output = self.feedforward(attn_output)
-        return self.addnorm3(ffn_output + attn_output)
+        # 第2个多头
+        z=self.second_multihead_attn(output1,encoder_z,second_attn_mask)  # z: (batch_size,seq_len,head*v_size)   , second_attn_mask用于遮盖encoder序列的pad部分,避免decoder Q到它们
+        z=self.z_linear2(z) # z: (batch_size,seq_len,emb_size)
+      #  print(f"output1 shape: {x.shape}, z shape: {z.shape}")
+     
+      #  if output1.shape[1] != z.shape[1]:  # 对 seq_len 维度进行对齐
+      #    min_len = min(output1.shape[1], z.shape[1])
+      #    output1 = output1[:, :min_len, :]
+      #    z = z[:, :min_len, :] 
+      
+        output2=self.addnorm2(z+output1) # x: (batch_size,seq_len,emb_size)
+
+        # 最后feedforward
+        z=self.feedforward(output2) # z: (batch_size,seq_len,emb_size)
+       
+      #  print(f"output2 shape: {x.shape}, z shape: {z.shape}")
+       # if output2.shape[1] != z.shape[1]:  # 对 seq_len 维度进行对齐
+      #    min_len = min(output2.shape[1], z.shape[1])
+     #     output2 = output2[:, :min_len, :]
+      #    z = z[:, :min_len, :]
+       
+        return self.addnorm3(z+output2) # (batch_size,seq_len,emb_size)
 
 if __name__=='__main__':
     # 取2个de句子转词ID序列，输入给encoder
@@ -68,7 +91,7 @@ if __name__=='__main__':
         de_ids2.extend([PAD_IDX]*(len(de_ids1)-len(de_ids2)))
     
     enc_x_batch=torch.tensor([de_ids1,de_ids2],dtype=torch.long).to(DEVICE)
-   #print('enc_x_batch batch:', enc_x_batch.size())
+    print('enc_x_batch batch:', enc_x_batch.size())
 
     # en句子组成batch并padding对齐
     if len(en_ids1)<len(en_ids2):

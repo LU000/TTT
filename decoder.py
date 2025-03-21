@@ -13,47 +13,73 @@ class Decoder(nn.Module):
     def __init__(self,vocab_size,emb_size,q_k_size,v_size,f_size,head,nblocks,dropout=0.1,seq_max_len=5000):
         super().__init__()
         self.emb=EmbeddingWithPosition(vocab_size,emb_size,dropout,seq_max_len)
-        #self.open_kvcache1=False
+
         self.decoder_blocks=nn.ModuleList()
-        for _ in range(nblocks):
-            self.decoder_blocks.append(DecoderBlock(emb_size,q_k_size,v_size,f_size,head))
+        for i in range(nblocks):
+            self.decoder_blocks.append(DecoderBlock(emb_size,q_k_size,v_size,f_size,head))#, i))
         
         # 输出向量词概率Logits
         self.linear=nn.Linear(emb_size,vocab_size)  
 
-    # 打开kvcache推理优化
+    def create_attention_mask(self, x, cache_length):
+        """
+        x: (batch_size, current_seq_len)
+        cache_length: 已缓存的序列长度
+        """
+        current_seq_len = x.size(1)
+        total_seq_len = cache_length + current_seq_len
+        #print(cache_length)
+        #print(current_seq_len)
+        # 创建因果掩码
+        causal_mask = torch.triu(
+            torch.ones(total_seq_len, total_seq_len, device=DEVICE), 
+            diagonal=1
+        ).bool()
+        
+        # 创建填充掩码
+        pad_mask = (x == PAD_IDX).unsqueeze(1).expand(-1, total_seq_len, -1)
+        pad_mask = pad_mask.transpose(1, 2)  # (batch_size, total_seq_len, current_seq_len)
+        
+        return pad_mask | causal_mask[None, :, :]
+
     def open_kvcache(self):
         for block in self.decoder_blocks:
             block.open_kvcache()
-           # self.open_kvcache1=True
-
-    # 关闭kvcache推理优化
+            
     def close_kvcache(self):
         for block in self.decoder_blocks:
             block.close_kvcache()
-    
-    def forward(self,x,encoder_z,encoder_x): # x: (batch_size,seq_len)
         
-        first_attn_mask=(x==PAD_IDX).unsqueeze(1).expand(x.size()[0],x.size()[1],x.size()[1]).to(DEVICE) # 目标序列的pad掩码
-        first_attn_mask=first_attn_mask|torch.triu(torch.ones(x.size()[1],x.size()[1]),diagonal=1).bool().unsqueeze(0).expand(x.size()[0],-1,-1).to(DEVICE) # &目标序列的向后看掩码
-        #print(f"Attention mask shape: {first_attn_mask.shape}")
+    def forward(self, x, encoder_x, prefill=False):
 
-        # 根据来源序列的pad掩码，遮盖decoder对其pad部分的注意力
-        if encoder_x is not None:
-        # 正常情况：根据 encoder_x 生成掩码
-             second_attn_mask = (encoder_x == PAD_IDX).unsqueeze(1).expand(encoder_x.size(0), x.size(1), encoder_x.size(1)).to(DEVICE)
-        else:
-             # 迁移场景：根据 encoder_z 的维度生成全 False 掩码（假设无填充）
-             batch_size, src_seq_len = encoder_z.size(0), encoder_z.size(1)
-             second_attn_mask = torch.zeros(batch_size, x.size(1), src_seq_len).bool().to(DEVICE)
-        #print(f'first_attn_mask={first_attn_mask.shape},second_attn_mask={second_attn_mask.shape}')
-        #second_attn_mask=(encoder_x==PAD_IDX).unsqueeze(1).expand(encoder_x.size()[0],x.size()[1],encoder_x.size()[1]).to(DEVICE) # (batch_size,target_len,src_len)
-        #print(f"second_attn_mask mask shape: {second_attn_mask.shape}")
-        x=self.emb(x)
-        for block in self.decoder_blocks:
-            x=block(x,encoder_z,first_attn_mask,second_attn_mask)
+        if prefill is True:#prefill阶段
+            attn_mask=(encoder_x==PAD_IDX).unsqueeze(1) # pad_mask:(batch_size,1,seq_len)
+            attn_mask=attn_mask.expand(encoder_x.size()[0],encoder_x.size()[1],encoder_x.size()[1]) # pad_mask:(batch_size,seq_len,seq_len)
+            attn_mask=attn_mask.to(DEVICE)
+            #print("prefill")
+            encoder_x = self.emb(encoder_x)
+            for block in self.decoder_blocks:
+                x = block(encoder_x, attn_mask)
+            prefill=False
         
-        return self.linear(x) # (batch_size,target_len,vocab_size)
+        else:#decode阶段
+            x = x[:, 1:] 
+            seq_len = encoder_x.size(1) + x.size(1)
+            attn_mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().unsqueeze(0).expand(x.size(0), -1, -1).to(DEVICE)  
+            #print(f"encoder_x shape: {encoder_x.shape}, x shape before embedding: {x.shape}")
+            x = self.emb(x)
+            encoder_x=self.emb(encoder_x)
+            #print(f"x shape after embedding: {x.shape}, {encoder_x.shape}")
+            x = torch.cat([encoder_x, x], dim=1)            
+          
+            #print("decode")
+            for block in self.decoder_blocks:
+                x = block(x, attn_mask)
+       #print(f"222222{attn_mask.shape}")
+
+
+        
+        return self.linear(x)
     
 if __name__=='__main__':
     # 取2个de句子转词ID序列，输入给encoder

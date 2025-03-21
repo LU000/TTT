@@ -1,4 +1,4 @@
-# host_b.py 要设置一下decode阶段 加上if self.cache 在selfattn中
+# host_b.py
 import torch
 import socket
 import pickle
@@ -83,28 +83,31 @@ class MigrationServer:
     def continue_translation(self, data):
         """继续翻译执行"""
         # 加载编码结果
-        #encoder_z = data['encoder_z'].to(DEVICE)
+        encoder_z = data['encoder_z'].to(DEVICE)
         en_token_ids = data['current_tokens']
         enc_x = data['enc_x'].to(DEVICE)
-        recv_time = time.time()
-        start_time = data['start_time']
-        print(f"[HostB] 数据迁移时间: {recv_time - start_time:.6f} 秒")
-  
-        encoder_z=self.model.encode(enc_x)#重计算 重新prefill
-        
         # 初始化解码器
         self.model.decoder.open_kvcache()
-        
         print(f'[HostB]enc_x:{enc_x.shape}, encoder_z, 形状: {encoder_z.shape}')
-        print(f'len={len(en_token_ids)}') 
-        if len(en_token_ids) > 1:
-           dec_x_full = torch.tensor([en_token_ids[:-1]], dtype=torch.long).to(DEVICE)
-           _ = self.model.decode(dec_x_full, encoder_z, enc_x)
-           #en_token_ids.append(next_token_id)
-           #print(en_token_ids)
-           print(f"[HostB] 回放Token重建KV Cache, 输入形状: {dec_x_full.shape}")
-    
-         
+                
+        
+        # 加载各层缓存
+        for layer_idx, layer in enumerate(self.model.decoder.decoder_blocks):
+            layer_key = f'layer_{layer_idx}'
+            if layer_key in data['kv_cache']:
+                layer.first_multihead_attn.kv_cache['K'] = data['kv_cache'][layer_key]['self_attn']['K'].to(DEVICE)
+                layer.first_multihead_attn.kv_cache['V'] = data['kv_cache'][layer_key]['self_attn']['V'].to(DEVICE)
+                
+                layer.second_multihead_attn.kv_cache['K'] = data['kv_cache'][layer_key]['cross_attn']['K'].to(DEVICE)
+                layer.second_multihead_attn.kv_cache['V'] = data['kv_cache'][layer_key]['cross_attn']['V'].to(DEVICE)           
+               
+                cross_attn_k = data['kv_cache'][layer_key]['cross_attn']['K']
+                self_attn_k =data['kv_cache'][layer_key]['self_attn']['K']
+                print(f"[HostB] 层 {layer_idx} 原始交叉注意力缓存形状: {cross_attn_k.shape}")
+                print(f"[HostB] 层 {layer_idx} 原始自注意力缓存形状: {self_attn_k.shape}")
+                #print(f"[HostB] 层 {layer_idx} 填充后交叉注意力缓存形状: {layer.second_multihead_attn.kv_cache['K'].shape}")
+        
+        
         #张量输出相同
         try:
             # 继续生成循环
